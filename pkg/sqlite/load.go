@@ -28,22 +28,21 @@ func NewSQLLiteLoader(outFilename string) (*SQLLoader, error) {
 
 	createTable := `
 	CREATE TABLE IF NOT EXISTS operatorbundle (
-		name TEXT PRIMARY KEY,  
+		name TEXT PRIMARY KEY, 
 		csv TEXT UNIQUE, 
 		bundle TEXT
 	);
 	CREATE TABLE IF NOT EXISTS package (
 		name TEXT PRIMARY KEY,
 		default_channel TEXT,
-		FOREIGN KEY(default_channel) REFERENCES channel(name)
+		FOREIGN KEY(default_channel, name) REFERENCES channel(name, package_name) ON DELETE CASCADE
 	);
 	CREATE TABLE IF NOT EXISTS channel (
 		name TEXT, 
 		package_name TEXT, 
 		head_operatorbundle_name TEXT,
 		PRIMARY KEY(name, package_name),
-		FOREIGN KEY(package_name) REFERENCES package(name),
-		FOREIGN KEY(head_operatorbundle_name) REFERENCES operatorbundle(name)
+		FOREIGN KEY(head_operatorbundle_name) REFERENCES operatorbundle(name) ON DELETE CASCADE
 	);
 	CREATE TABLE IF NOT EXISTS channel_entry (
 		entry_id INTEGER PRIMARY KEY,
@@ -52,10 +51,8 @@ func NewSQLLiteLoader(outFilename string) (*SQLLoader, error) {
 		operatorbundle_name TEXT,
 		replaces INTEGER,
 		depth INTEGER,
-		FOREIGN KEY(replaces) REFERENCES channel_entry(entry_id)  DEFERRABLE INITIALLY DEFERRED, 
-		FOREIGN KEY(channel_name) REFERENCES channel(name),
-		FOREIGN KEY(package_name) REFERENCES channel(package_name),
-		FOREIGN KEY(operatorbundle_name) REFERENCES operatorbundle(name)
+		FOREIGN KEY(replaces) REFERENCES channel_entry(entry_id) DEFERRABLE INITIALLY DEFERRED,
+		FOREIGN KEY(operatorbundle_name) REFERENCES operatorbundle(name) ON DELETE CASCADE
 	);
 	CREATE TABLE IF NOT EXISTS api (
 		group_name TEXT,
@@ -69,12 +66,14 @@ func NewSQLLiteLoader(outFilename string) (*SQLLoader, error) {
 		version TEXT,
 		kind TEXT,
 		channel_entry_id INTEGER,
-		FOREIGN KEY(channel_entry_id) REFERENCES channel_entry(entry_id),
-		FOREIGN KEY(group_name, version, kind) REFERENCES api(group_name, version, kind) 
+		FOREIGN KEY(channel_entry_id) REFERENCES channel_entry(entry_id) ON DELETE CASCADE
 	);
 	`
 
 	if _, err = db.Exec(createTable); err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec("PRAGMA foreign_keys = ON", nil); err != nil {
 		return nil, err
 	}
 	return &SQLLoader{db}, nil
@@ -373,10 +372,10 @@ func (s *SQLLoader) addProvidedAPIs(tx *sql.Tx, csv *registry.ClusterServiceVers
 		if err != nil {
 			return err
 		}
-		if _, err := addAPI.Exec(group, crd.Version, crd.Kind, plural); err != nil {
+		if _, err := addAPIProvider.Exec(group, crd.Version, crd.Kind, channelEntryId); err != nil {
 			return err
 		}
-		if _, err := addAPIProvider.Exec(group, crd.Version, crd.Kind, channelEntryId); err != nil {
+		if _, err := addAPI.Exec(group, crd.Version, crd.Kind, plural); err != nil {
 			return err
 		}
 	}
@@ -390,5 +389,109 @@ func (s *SQLLoader) addProvidedAPIs(tx *sql.Tx, csv *registry.ClusterServiceVers
 			return err
 		}
 	}
+	return nil
+}
+
+func (s *SQLLoader) getCSVNames(tx *sql.Tx, packageName string) ([]string, error) {
+	getID, err := tx.Prepare(`
+	  SELECT DISTINCT channel_entry.operatorbundle_name
+	  FROM channel_entry
+	  WHERE channel_entry.package_name=?`)
+
+	if err != nil {
+		return nil, err
+	}
+	defer getID.Close()
+
+	rows, err := getID.Query(packageName)
+	if err != nil {
+		return nil, err
+	}
+
+	var csvName string
+	csvNames := []string{}
+	for rows.Next() {
+		err := rows.Scan(&csvName)
+		if err != nil {
+			return nil, err
+		}
+		csvNames = append(csvNames, csvName)
+	}
+
+	return csvNames, nil
+}
+
+func (s *SQLLoader) rmAPIs(tx *sql.Tx, csv *registry.ClusterServiceVersion) error {
+	rmAPI, err := tx.Prepare("delete from api where group_name=? AND version=? AND kind=?")
+	if err != nil {
+		return err
+	}
+	defer rmAPI.Close()
+
+	ownedCRDs, _, err := csv.GetCustomResourceDefintions()
+	for _, crd := range ownedCRDs {
+		_, group, err := SplitCRDName(crd.Name)
+		if err != nil {
+			return err
+		}
+		if _, err := rmAPI.Exec(group, crd.Version, crd.Kind); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *SQLLoader) RmPackageName(packageName string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		tx.Rollback()
+	}()
+
+	csvNames, err := s.getCSVNames(tx, packageName)
+	if err != nil {
+		return err
+	}
+	for _, csvName := range csvNames {
+		csv, err := s.getCSV(tx, csvName)
+		if csv != nil {
+			err = s.rmAPIs(tx, csv)
+			if err != nil {
+				return err
+			}
+			err = s.rmBundle(tx, csvName)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	err = s.garbageCollection(tx)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *SQLLoader) rmBundle(tx *sql.Tx, csvName string) error {
+	stmt, err := tx.Prepare("DELETE FROM operatorbundle WHERE operatorbundle.name=?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	if _, err := stmt.Exec(csvName); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *SQLLoader) garbageCollection(tx *sql.Tx) error {
+	// TODO: Lance
 	return nil
 }

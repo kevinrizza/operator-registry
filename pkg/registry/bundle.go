@@ -188,6 +188,8 @@ func (b *Bundle) Serialize() (csvName string, csvBytes []byte, bundleBytes []byt
 			if csvCount > 1 {
 				return "", nil, nil, fmt.Errorf("two csvs found in one bundle")
 			}
+		} else if obj.GetObjectKind().GroupVersionKind().Kind != "CustomResourceDefinition" {
+			return "", nil, nil, fmt.Errorf("%s", obj)
 		}
 	}
 

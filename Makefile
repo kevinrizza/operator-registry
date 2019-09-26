@@ -1,5 +1,6 @@
+
 MOD_FLAGS := $(shell (go version | grep -q -E "1\.(11|12)") && echo -mod=vendor)
-CMDS  := $(addprefix bin/, $(shell go list $(MOD_FLAGS) ./cmd/... | xargs -I{} basename {}))
+CMDS  := $(addprefix bin/, $(shell go list $(MOD_FLAGS) ./cmd/... | grep -Fv "github.com/operator-framework/operator-registry/cmd/cli" |xargs -I{} basename {}))
 
 .PHONY: build test vendor clean
 
