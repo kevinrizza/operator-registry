@@ -6,7 +6,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/operator-framework/operator-registry/pkg/sqlite"
+	"github.com/operator-framework/operator-registry/pkg/containertools"
+	//"github.com/operator-framework/operator-registry/pkg/sqlite"
 )
 
 var rootCmd = &cobra.Command{
@@ -35,11 +36,13 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err.Error())
 		panic(err)
 	}
 }
 
 func runCmdFunc(cmd *cobra.Command, args []string) error {
+	/*
 	outFilename, err := cmd.Flags().GetString("output")
 	if err != nil {
 		return err
@@ -52,7 +55,6 @@ func runCmdFunc(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
 	dbLoader, err := sqlite.NewSQLLiteLoader(outFilename)
 	if err != nil {
 		return err
@@ -67,6 +69,15 @@ func runCmdFunc(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		logrus.WithError(err).Warn("permissive mode enabled")
+	}
+	*/
+	
+	// Pull the image and get the manifests
+	reader := containertools.NewBundleReader()
+	
+	err := reader.GetBundle("quay.io/kevinrizza/example-bundle", "./bundle")
+	if err != nil {
+		return err
 	}
 
 	return nil
