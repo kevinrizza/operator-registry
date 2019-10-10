@@ -12,6 +12,7 @@ import (
 
 	"github.com/operator-framework/operator-registry/pkg/api"
 	health "github.com/operator-framework/operator-registry/pkg/api/grpc_health_v1"
+	"github.com/operator-framework/operator-registry/pkg/containertools"
 	"github.com/operator-framework/operator-registry/pkg/lib/log"
 	"github.com/operator-framework/operator-registry/pkg/registry"
 	"github.com/operator-framework/operator-registry/pkg/server"
@@ -83,7 +84,8 @@ func newOpmRegistryAddCmd() *cobra.Command {
 
 	rootCmd.Flags().Bool("debug", false, "enable debug logging")
 	rootCmd.Flags().StringP("database", "d", "bundles.db", "relative path to database file")
-	rootCmd.Flags().StringP("manifests", "m", "manifests", "relative path to directory of manifests")
+	rootCmd.Flags().StringP("download-folder", "f", "downloaded", "directory where downloaded operator bundle(s) will be stored to be processed further")
+	rootCmd.Flags().StringP("manifests", "m", "manifests", "link to manifest image")
 	rootCmd.Flags().Bool("permissive", false, "allow registry load errors")
 
 	return rootCmd
@@ -171,11 +173,23 @@ func runOpmRegistryServeCmdFunc(cmd *cobra.Command, args []string) error {
 }
 
 func runOpmRegistryAddCmdFunc(cmd *cobra.Command, args []string) error {
-	fromFilename, err := cmd.Flags().GetString("database")
+	downloadPath, err := cmd.Flags().GetString("download-folder")
 	if err != nil {
 		return err
 	}
-	manifestDir, err := cmd.Flags().GetString("manifests")
+	manifestImage, err := cmd.Flags().GetString("manifests")
+	if err != nil {
+		return err
+	}
+	// Pull the image and get the manifests
+	reader := containertools.NewBundleReader()
+
+	err = reader.GetBundle(manifestImage, downloadPath)
+	if err != nil {
+		return err
+	}
+
+	fromFilename, err := cmd.Flags().GetString("database")
 	if err != nil {
 		return err
 	}
@@ -190,7 +204,7 @@ func runOpmRegistryAddCmdFunc(cmd *cobra.Command, args []string) error {
 	}
 	defer dbLoader.Close()
 
-	loader := sqlite.NewSQLLoaderForDirectory(dbLoader, manifestDir)
+	loader := sqlite.NewSQLLoaderForDirectory(dbLoader, downloadPath)
 	if err := loader.Populate(); err != nil {
 		err = fmt.Errorf("error loading manifests from directory: %s", err)
 		if !permissive {

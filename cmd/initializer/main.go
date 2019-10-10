@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	cli "github.com/operator-framework/operator-registry/cmd/cli"
 )
 
@@ -12,6 +14,7 @@ func main() {
 	}
 
 	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err.Error())
 		panic(err)
 	}
 }
