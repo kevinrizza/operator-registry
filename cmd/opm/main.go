@@ -4,7 +4,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	cli "github.com/operator-framework/operator-registry/cmd/cli"
+	"github.com/operator-framework/operator-registry/cmd/opm/registry"
 )
 
 func main() {
@@ -14,7 +14,7 @@ func main() {
 		Long:  "Top level CLI for operator-registry",
 	}
 
-	rootCmd.AddCommand(cli.NewOpmRegistryCmd())
+	rootCmd.AddCommand(registry.NewOpmRegistryCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		logrus.Panic(err.Error())

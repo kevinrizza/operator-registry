@@ -1,10 +1,9 @@
-package cli
+package registry
 
 import (
 	"context"
 	"net"
 
-	"github.com/operator-framework/operator-registry/pkg/lib/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -12,17 +11,17 @@ import (
 
 	"github.com/operator-framework/operator-registry/pkg/api"
 	health "github.com/operator-framework/operator-registry/pkg/api/grpc_health_v1"
+	"github.com/operator-framework/operator-registry/pkg/lib/log"
 	"github.com/operator-framework/operator-registry/pkg/registry"
 	"github.com/operator-framework/operator-registry/pkg/server"
 	"github.com/operator-framework/operator-registry/pkg/sqlite"
 )
 
-// NewRegistryServerCmd returns the appregistry-server command
-func NewRegistryServerCmd() *cobra.Command {
+func newOpmRegistryServeCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "registry-server",
-		Short: "registry-server",
-		Long:  `registry loads a sqlite database containing operator manifests and serves a grpc API to query it`,
+		Use:   "serve",
+		Short: "serve operator registry DB",
+		Long:  `serve operator registry DB`,
 
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if debug, _ := cmd.Flags().GetBool("debug"); debug {
@@ -31,7 +30,7 @@ func NewRegistryServerCmd() *cobra.Command {
 			return nil
 		},
 
-		RunE: runRegistryServerCmdFunc,
+		RunE: serve,
 	}
 
 	rootCmd.Flags().Bool("debug", false, "enable debug logging")
@@ -42,7 +41,7 @@ func NewRegistryServerCmd() *cobra.Command {
 	return rootCmd
 }
 
-func runRegistryServerCmdFunc(cmd *cobra.Command, args []string) error {
+func serve(cmd *cobra.Command, args []string) error {
 	// Immediately set up termination log
 	terminationLogPath, err := cmd.Flags().GetString("termination-log")
 	if err != nil {
