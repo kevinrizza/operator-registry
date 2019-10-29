@@ -65,7 +65,8 @@ func (b *BundleReader) GetBundle(image, outputDir string) error {
 	if err != nil {
 		return err
 	}
-// Untar theimage layer tarballs and push the bundle manifests to the output directory
+	
+	// Untar the image layer tarballs and push the bundle manifests to the output directory
 	for _, tarball := range layerTarballs {
 		f, err = os.Open(rootTarfile)
 		if err != nil {

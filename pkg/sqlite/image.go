@@ -151,6 +151,11 @@ func (i *ImageLoader) loadManifests(manifests, image string, annotationsFile *re
 		return fmt.Errorf("Error adding package %s", err)
 	}
 
+	// Finally let's delete all the old bundles
+	if err = i.store.ClearNonDefaultBundles(packageManifest.PackageName); err != nil {
+		return fmt.Errorf("Error deleting previous bundles: %s", err)
+	}
+
 	return nil
 }
 

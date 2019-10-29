@@ -283,6 +283,100 @@ func (s *SQLLoader) AddPackageChannels(manifest registry.PackageManifest) error 
 	return utilerrors.NewAggregate(errs)
 }
 
+func (s *SQLLoader) ClearNonDefaultBundles(packageName string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		tx.Rollback()
+	}()
+
+	// First find the default channel for the package
+	getDefChan, err := tx.Prepare(fmt.Sprintf("select default_channel from package where name='%s'", packageName))
+	if err != nil {
+		return err
+	}
+	defer getDefChan.Close()
+
+	defaultChannelRows, err := getDefChan.Query()
+	if err != nil {
+		return err
+	}
+	if !defaultChannelRows.Next() {
+		return fmt.Errorf("no default channel found for package %s", packageName)
+	}
+	var defaultChannel sql.NullString
+	if err := defaultChannelRows.Scan(&defaultChannel); err != nil {
+		return err
+	}
+
+	// Then get the head of the default channel
+	getChanHead, err := tx.Prepare(fmt.Sprintf("select head_operatorbundle_name from channel where name='%s'", defaultChannel.String))
+	if err != nil {
+		return err
+	}
+	defer getChanHead.Close()
+
+	chanHeadRows, err := getChanHead.Query()
+	if err != nil {
+		return err
+	}
+	if !chanHeadRows.Next() {
+		return fmt.Errorf("no channel head found for default channel %s", defaultChannel.String)
+	}
+	var defChanHead sql.NullString
+	if err := chanHeadRows.Scan(&defChanHead); err != nil {
+		return err
+	}
+
+	// Now get all the bundles that are not the head of the default channel
+	getChannelBundles, err := tx.Prepare(fmt.Sprintf("SELECT operatorbundle_name FROM channel_entry WHERE package_name='%s' AND operatorbundle_name!='%s'", packageName, defChanHead.String))
+	if err != nil {
+		return err
+	}
+	defer getChanHead.Close()
+
+	chanBundleRows, err := getChannelBundles.Query()
+	if err != nil {
+		return err
+	}
+	bundles := make(map[string]struct{},0)
+	for chanBundleRows.Next() {
+		var bundleToUpdate sql.NullString
+		if err := chanBundleRows.Scan(&bundleToUpdate); err != nil {
+			return err
+		}
+		bundles[bundleToUpdate.String] = struct{}{}
+	}
+
+	if len(bundles) > 0 {
+		var bundlePredicates []string
+		for bundle := range bundles {
+			bundlePredicates = append(bundlePredicates, fmt.Sprintf("name = '%s'", bundle))
+		}
+
+		var transactionPredicate string
+		if len(bundlePredicates) == 1 {
+			transactionPredicate = fmt.Sprintf("WHERE %s", bundlePredicates[0])
+		} else {
+			transactionPredicate = fmt.Sprintf("WHERE %s", strings.Join(bundlePredicates, " OR "))
+		}
+		
+		removeOldBundles, err := tx.Prepare(fmt.Sprintf("UPDATE operatorbundle SET bundle = null, csv = null %s", transactionPredicate))
+		if err != nil {
+			return err
+		}
+
+		_, err = removeOldBundles.Exec()
+		if err != nil {
+			return fmt.Errorf("Unable to remove previous bundles: %s", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 func SplitCRDName(crdName string) (plural, group string, err error) {
 	pluralGroup := strings.SplitN(crdName, ".", 2)
 	if len(pluralGroup) != 2 {
