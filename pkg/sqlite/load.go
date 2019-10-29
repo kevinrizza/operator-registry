@@ -68,7 +68,7 @@ func (s *SQLLoader) AddOperatorBundle(bundle *registry.Bundle) error {
 	}
 	defer addImage.Close()
 
-	csvName, csvBytes, bundleBytes, err := bundle.Serialize()
+	csvName, bundleImage, csvBytes, bundleBytes, err := bundle.Serialize()
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (s *SQLLoader) AddOperatorBundle(bundle *registry.Bundle) error {
 		return fmt.Errorf("csv name not found")
 	}
 
-	if _, err := stmt.Exec(csvName, csvBytes, bundleBytes, nil); err != nil {
+	if _, err := stmt.Exec(csvName, csvBytes, bundleBytes, bundleImage); err != nil {
 		return err
 	}
 

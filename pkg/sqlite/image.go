@@ -51,9 +51,9 @@ func (i *ImageLoader) Populate() error {
 
 	i.directory = workingDir
 
-	log.Info("loading Bundle")
+	log.Infof("loading Bundle %s", i.image)
 	errs := make([]error, 0)
-	if err := i.LoadBundleFunc(workingDir); err != nil {
+	if err := i.LoadBundleFunc(workingDir, i.image); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -63,7 +63,7 @@ func (i *ImageLoader) Populate() error {
 // LoadBundleFunc walks the directory. When it sees a `.clusterserviceversion.yaml` file, it
 // attempts to load the surrounding files in the same directory as a bundle, and stores them in the
 // db for querying
-func (i *ImageLoader) LoadBundleFunc(path string) error {
+func (i *ImageLoader) LoadBundleFunc(path, image string) error {
 	manifests := filepath.Join(path, "manifests")
 	metadata := filepath.Join(path, "metadata")
 
@@ -93,7 +93,7 @@ func (i *ImageLoader) LoadBundleFunc(path string) error {
 		return fmt.Errorf("Could not find annotations.yaml file")
 	}
 
-	err = i.loadManifests(manifests, annotationsFile)
+	err = i.loadManifests(manifests, image, annotationsFile)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (i *ImageLoader) LoadBundleFunc(path string) error {
 	return nil
 }
 
-func (i *ImageLoader) loadManifests(manifests string, annotationsFile *registry.AnnotationsFile) error {
+func (i *ImageLoader) loadManifests(manifests, image string, annotationsFile *registry.AnnotationsFile) error {
 	log := logrus.WithFields(logrus.Fields{"dir": i.directory, "file": manifests, "load": "bundle"})
 
 	csv, err := i.findCSV(manifests)
@@ -125,6 +125,9 @@ func (i *ImageLoader) loadManifests(manifests string, annotationsFile *registry.
 	if bundle == nil || bundle.Size() == 0 {
 		return fmt.Errorf("no bundle objects found")
 	}
+
+	// set the bundleimage on the bundle
+	bundle.BundleImage = image
 
 	if err := bundle.AllProvidedAPIsInBundle(); err != nil {
 		return fmt.Errorf("error checking provided apis in bundle %s: %s", bundle.Name, err)
