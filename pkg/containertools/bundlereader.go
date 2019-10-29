@@ -47,7 +47,6 @@ func (b *BundleReader) GetBundle(image, outputDir string) error {
 	}
 	defer os.RemoveAll(workingDir)
 
-	//TODO: Use filepath package here
 	rootTarfile := filepath.Join(workingDir, "bundle.tar")
 
 	err = r.Save(image, rootTarfile)
@@ -62,34 +61,35 @@ func (b *BundleReader) GetBundle(image, outputDir string) error {
 	defer f.Close()
 
 	// Read the manifest.json file to find the right embedded tarball
-	layerTarball, err := getManifestLayer(tar.NewReader(f))
+	layerTarballs, err := getManifestLayers(tar.NewReader(f))
 	if err != nil {
 		return err
 	}
+// Untar theimage layer tarballs and push the bundle manifests to the output directory
+	for _, tarball := range layerTarballs {
+		f, err = os.Open(rootTarfile)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
 
-	f, err = os.Open(rootTarfile)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	// Untar the top image layer tarball and push the bundle manifests to the output directory
-	err = extractBundleManifests(layerTarball, outputDir, tar.NewReader(f))
-	if err != nil {
-		return err
+		err = extractBundleManifests(tarball, outputDir, tar.NewReader(f))
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func getManifestLayer(tarReader *tar.Reader) (string, error) {
+func getManifestLayers(tarReader *tar.Reader) ([]string, error) {
 	for {
 		header, err := tarReader.Next()
 		if err != nil {
 			if err == io.EOF {
-				return "", fmt.Errorf("invalid bundle image: unable to find manifest.json")
+				return nil, fmt.Errorf("invalid bundle image: unable to find manifest.json")
 			}
-			return "", err
+			return nil, err
 		}
 
 		if header.Name == imageManifestName {
@@ -100,20 +100,20 @@ func getManifestLayer(tarReader *tar.Reader) (string, error) {
 			manifests := make([]imageManifest, 0)
 			err := json.Unmarshal(b, &manifests)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 
 			if len(manifests) == 0 {
-				return "", fmt.Errorf("invalid bundle image: manifest.json missing manifest data")
+				return nil, fmt.Errorf("invalid bundle image: manifest.json missing manifest data")
 			}
 
 			topManifest := manifests[0]
 
 			if len(topManifest.Layers) == 0 {
-				return "", fmt.Errorf("invalid bundle image: manifest has no layers")
+				return nil, fmt.Errorf("invalid bundle image: manifest has no layers")
 			}
 
-			return topManifest.Layers[0], nil
+			return topManifest.Layers, nil
 		}
 	}
 }
