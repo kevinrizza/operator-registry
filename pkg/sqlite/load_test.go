@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -141,14 +142,14 @@ func TestAddPackageChannels(t *testing.T) {
 
 			for i, pkg := range tt.args.pkgs {
 				errs := store.AddPackageChannels(pkg, registry.ReplacesMode)
-				require.Equal(t, tt.expected.errs[i], errs, "expected %v, got %v", tt.expected.errs[i], errs)
+				assert.Equal(t, tt.expected.errs[i], errs, "expected %v, got %v", tt.expected.errs[i], errs)
 			}
 
 			// Ensure expected packages were loaded
 			querier := NewSQLLiteQuerierFromDb(db)
 			pkgs, err := querier.ListPackages(context.Background())
 			require.NoError(t, err)
-			require.ElementsMatch(t, tt.expected.pkgs, pkgs)
+			assert.ElementsMatch(t, tt.expected.pkgs, pkgs)
 		})
 	}
 }
@@ -196,7 +197,7 @@ func TestAddPackageChannels_SemVer(t *testing.T) {
 				},
 			},
 			expected: expected{
-				errs: make([]error, 2),
+				errs: make([]error, 1),
 				pkgs: []string{
 					"pkg-0",
 				},
@@ -308,7 +309,7 @@ func TestAddPackageChannels_SemVer(t *testing.T) {
 				},
 			},
 			expected: expected{
-				errs: make([]error, 2),
+				errs: make([]error, 3),
 				pkgs: []string{
 					"pkg-0",
 				},
@@ -353,7 +354,208 @@ func TestAddPackageChannels_SemVer(t *testing.T) {
 			for _, replace := range tt.expected.replaces {
 				r, err := querier.GetBundleThatReplaces(context.Background(), replace.from, replace.pkg, replace.channel)
 				require.NoError(t, err)
-				require.Equal(t, replace.to, r.CsvName)
+				assert.Equal(t, replace.to, r.CsvName)
+			}
+		})
+	}
+}
+
+func TestAddPackageChannels_SkipPatch(t *testing.T) {
+	type bundleImageBlob struct {
+		bundle *registry.Bundle
+		pkg    registry.PackageManifest
+	}
+	type replace struct {
+		from    string
+		to      string
+		channel string
+		pkg     string
+	}
+	type expected struct {
+		errs     []error
+		pkgs     []string
+		replaces []replace
+	}
+	tests := []struct {
+		description      string
+		bundleImageBlobs []bundleImageBlob
+		expected         expected
+	}{
+		{
+			description: "AddOneBundleWithReplacesSet",
+			bundleImageBlobs: []bundleImageBlob{
+				{
+					bundle: newBundle(t, "csv-a", "pkg-0", "stable", newUnstructuredCSV(t, "csv-a", "csv-b")),
+					pkg: registry.PackageManifest{
+						PackageName: "pkg-0",
+						Channels: []registry.PackageChannel{
+							{
+								Name:           "stable",
+								CurrentCSVName: "csv-a",
+							},
+							{
+								Name:           "alpha",
+								CurrentCSVName: "csv-a",
+							},
+						},
+						DefaultChannelName: "stable",
+					},
+				},
+			},
+			expected: expected{
+				errs: make([]error, 1),
+				pkgs: []string{
+					"pkg-0",
+				},
+			},
+		},
+		{
+			description: "AddMultipleBundlesWithMajorVersion",
+			bundleImageBlobs: []bundleImageBlob{
+				{
+					bundle: newBundle(t, "csv-a", "pkg-0", "stable", newUnstructuredCSVWithVersion(t, "csv-a", "0.6.0")),
+					pkg: registry.PackageManifest{
+						PackageName: "pkg-0",
+						Channels: []registry.PackageChannel{
+							{
+								Name:           "stable",
+								CurrentCSVName: "csv-a",
+							},
+							{
+								Name:           "alpha",
+								CurrentCSVName: "csv-a",
+							},
+						},
+						DefaultChannelName: "stable",
+					},
+				},
+				{
+					bundle: newBundle(t, "csv-b", "pkg-0", "stable", newUnstructuredCSVWithVersion(t, "csv-b",
+						"0.7.0")),
+					pkg: registry.PackageManifest{
+						PackageName: "pkg-0",
+						Channels: []registry.PackageChannel{
+							{
+								Name:           "stable",
+								CurrentCSVName: "csv-b",
+							},
+							{
+								Name:           "alpha",
+								CurrentCSVName: "csv-a",
+							},
+						},
+						DefaultChannelName: "stable",
+					},
+				},
+				{
+					bundle: newBundle(t, "csv-b", "pkg-0", "stable", newUnstructuredCSVWithVersion(t, "csv-c",
+						"0.7.1")),
+					pkg: registry.PackageManifest{
+						PackageName: "pkg-0",
+						Channels: []registry.PackageChannel{
+							{
+								Name:           "stable",
+								CurrentCSVName: "csv-c",
+							},
+							{
+								Name:           "alpha",
+								CurrentCSVName: "csv-a",
+							},
+						},
+						DefaultChannelName: "stable",
+					},
+				},
+			},
+
+			expected: expected{
+				errs: make([]error, 3),
+				pkgs: []string{
+					"pkg-0",
+				},
+				replaces: []replace{
+					{
+						from:    "csv-a",
+						to:      "csv-b",
+						pkg:     "pkg-0",
+						channel: "stable",
+					},
+				},
+			},
+		},
+		{
+			description: "AddMultipleBundlesWithNoMajorVersion",
+			bundleImageBlobs: []bundleImageBlob{
+				{
+					bundle: newBundle(t, "csv-a", "pkg-0", "stable", newUnstructuredCSVWithVersion(t, "csv-a", "0.6.0")),
+					pkg: registry.PackageManifest{
+						PackageName: "pkg-0",
+						Channels: []registry.PackageChannel{
+							{
+								Name:           "stable",
+								CurrentCSVName: "csv-a",
+							},
+							{
+								Name:           "alpha",
+								CurrentCSVName: "csv-a",
+							},
+						},
+						DefaultChannelName: "stable",
+					},
+				},
+				{
+					bundle: newBundle(t, "csv-b", "pkg-0", "stable", newUnstructuredCSVWithVersion(t, "csv-b",
+						"0.6.1")),
+					pkg: registry.PackageManifest{
+						PackageName: "pkg-0",
+						Channels: []registry.PackageChannel{
+							{
+								Name:           "stable",
+								CurrentCSVName: "csv-b",
+							},
+							{
+								Name:           "alpha",
+								CurrentCSVName: "csv-a",
+							},
+						},
+						DefaultChannelName: "stable",
+					},
+				},
+			},
+
+			expected: expected{
+				errs: make([]error, 2),
+				pkgs: []string{
+					"pkg-0",
+				},
+				replaces: []replace{},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			db, cleanup := CreateTestDb(t)
+			defer cleanup()
+			store, err := NewSQLLiteLoader(db)
+			require.NoError(t, err)
+			err = store.Migrate(context.TODO())
+			require.NoError(t, err)
+
+			for _, blob := range tt.bundleImageBlobs {
+				err := store.AddBundlePackageChannels(blob.pkg, *blob.bundle, registry.SkipPatchMode)
+				require.NoError(t, err)
+			}
+
+			// Ensure expected packages were loaded
+			querier := NewSQLLiteQuerierFromDb(db)
+			pkgs, err := querier.ListPackages(context.Background())
+			require.NoError(t, err)
+			assert.ElementsMatch(t, tt.expected.pkgs, pkgs)
+
+			for _, replace := range tt.expected.replaces {
+				r, err := querier.GetBundleThatReplaces(context.Background(), replace.from, replace.pkg, replace.channel)
+				require.NoError(t, err)
+				assert.Equal(t, replace.to, r.CsvName)
 			}
 		})
 	}
