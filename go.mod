@@ -37,7 +37,7 @@ require (
 )
 
 replace (
-	github.com/alicebob/sqlittle v1.1.0 => github.com/ecordell/sqlittle v1.1.1 // fix sql parsing
+	github.com/alicebob/sqlittle v1.1.0 => github.com/kevinrizza/sqlittle v1.1.1 // fix sql parsing
 	github.com/docker/docker => github.com/moby/moby v0.7.3-0.20190826074503-38ab9da00309 // Required by Helm
 )
 
