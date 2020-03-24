@@ -3,32 +3,20 @@ package registry
 type Package struct {
 	Name           string
 	DefaultChannel string
-	Channels       []Channel
+	Channels       map[string]Channel
 }
 
 type Channel struct {
-	Name            string
-	OperatorBundles []OperatorBundle
-	Head            BundleRef
+	Head     BundleKey
+	Replaces map[BundleKey]map[BundleKey]struct{}
 }
 
-type OperatorBundle struct {
-	BundlePath      string
-	Version         string // semver string
-	CsvName         string
-	ReplacesBundles []OperatorBundle
-	Replaces        []BundleRef
-}
-
-type BundleRef struct {
+type BundleKey struct {
 	BundlePath string
 	Version    string //semver string
 	CsvName    string
 }
 
-func (b *BundleRef) IsEmptyRef() bool {
-	if b.BundlePath == "" && b.Version == "" && b.CsvName == "" {
-		return true
-	}
-	return false
+func (b *BundleKey) IsEmpty() bool {
+	return b.BundlePath == "" && b.Version == "" && b.CsvName == ""
 }
