@@ -5,10 +5,11 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"fmt"
-	"github.com/operator-framework/operator-registry/pkg/containertools"
-	"github.com/operator-framework/operator-registry/pkg/image/execregistry"
 	"io/ioutil"
 	"os"
+
+	"github.com/operator-framework/operator-registry/pkg/containertools"
+	"github.com/operator-framework/operator-registry/pkg/image/execregistry"
 
 	"github.com/sirupsen/logrus"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -36,7 +37,9 @@ type AddToRegistryRequest struct {
 func (r RegistryUpdater) AddToRegistry(request AddToRegistryRequest) error {
 	var errs []error
 
-	db, err := sql.Open("sqlite3", request.InputDatabase)
+	fmt.Println("here?")
+
+	db, err := sql.Open("sqlite3", request.InputDatabase+"?_foreign_keys=off")
 	if err != nil {
 		return err
 	}

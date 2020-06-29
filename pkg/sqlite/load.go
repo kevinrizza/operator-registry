@@ -67,7 +67,8 @@ func (s *sqlLoader) AddOperatorBundle(bundle *registry.Bundle) error {
 }
 
 func (s *sqlLoader) addOperatorBundle(tx *sql.Tx, bundle *registry.Bundle) error {
-	addBundle, err := tx.Prepare("insert into operatorbundle(name, csv, bundle, bundlepath, version, skiprange, replaces, skips) values(?, ?, ?, ?, ?, ?, ?, ?)")
+	//testing
+	addBundle, err := tx.Prepare("insert into operatorbundle(name, csv, bundle, bundlepath, version, skiprange, replaces, skips, package_name) values(?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -558,9 +559,9 @@ func (s *sqlLoader) addAPIs(tx *sql.Tx, bundle *registry.Bundle) error {
 
 func (s *sqlLoader) getCSVNames(tx *sql.Tx, packageName string) ([]string, error) {
 	getID, err := tx.Prepare(`
-	  SELECT DISTINCT channel_entry.operatorbundle_name
-	  FROM channel_entry
-	  WHERE channel_entry.package_name=?`)
+	  SELECT name
+	  FROM operatorbundle
+	  WHERE package_name=?`)
 
 	if err != nil {
 		return nil, err
