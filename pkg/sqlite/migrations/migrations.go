@@ -8,9 +8,10 @@ import (
 )
 
 type Migration struct {
-	Id   int
-	Up   func(context.Context, *sql.Tx) error
-	Down func(context.Context, *sql.Tx) error
+	Id         int
+	Up         func(context.Context, *sql.Tx) error
+	Down       func(context.Context, *sql.Tx) error
+	DisableFks bool
 }
 
 type MigrationSet map[int]*Migration

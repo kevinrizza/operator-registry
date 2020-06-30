@@ -56,7 +56,7 @@ func addPackage(tx *sql.Tx, packageName string) error {
 }
 
 func addPackageIfNotExists(tx *sql.Tx, packageName string) error {
-	addPackage, err := tx.Prepare("insert or replace into package(name) values(?)")
+	addPackage, err := tx.Prepare("insert or ignore into package(name) values(?)")
 	if err != nil {
 		return err
 	}

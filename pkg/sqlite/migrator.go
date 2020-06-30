@@ -66,8 +66,10 @@ func (m *SQLLiteMigrator) Migrate(ctx context.Context) error {
 
 // Up runs a specific set of migrations.
 func (m *SQLLiteMigrator) Up(ctx context.Context, migrations migrations.Migrations) error {
+	failedTransactions := make([]*sql.Tx, 0)
 	tx, err := m.db.Begin()
 	if err != nil {
+		failedTransactions = append(failedTransactions, tx)
 		return err
 	}
 	var commitErr error
@@ -76,18 +78,38 @@ func (m *SQLLiteMigrator) Up(ctx context.Context, migrations migrations.Migratio
 			return
 		}
 		logrus.WithError(commitErr).Warningf("tx commit failed")
-		if err := tx.Rollback(); err != nil {
-			logrus.WithError(err).Warningf("couldn't rollback after failed commit")
+		for _, failedTx := range failedTransactions {
+			if err := failedTx.Rollback(); err != nil {
+				logrus.WithError(err).Warningf("couldn't rollback after failed commit")
+			}
 		}
 	}()
 
 	if err := m.ensureMigrationTable(ctx, tx); err != nil {
+		failedTransactions = append(failedTransactions, tx)
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		failedTransactions = append(failedTransactions, tx)
 		return err
 	}
 
 	for _, migration := range migrations {
-		current_version, err := m.version(ctx, tx)
+		getVersionTx, err := m.db.Begin()
 		if err != nil {
+			failedTransactions = append(failedTransactions, getVersionTx)
+			return err
+		}
+		current_version, err := m.version(ctx, getVersionTx)
+		if err != nil {
+			failedTransactions = append(failedTransactions, getVersionTx)
+			return err
+		}
+		err = getVersionTx.Commit()
+		if err != nil {
+			failedTransactions = append(failedTransactions, getVersionTx)
 			return err
 		}
 
@@ -95,16 +117,55 @@ func (m *SQLLiteMigrator) Up(ctx context.Context, migrations migrations.Migratio
 			return fmt.Errorf("migration applied out of order")
 		}
 
-		if err := migration.Up(ctx, tx); err != nil {
+		if migration.DisableFks {
+			_, err = m.db.Exec("PRAGMA foreign_keys = 0")
+			if err != nil {
+				return err
+			}
+		}
+
+		migrationTx, err := m.db.Begin()
+		if err != nil {
+			failedTransactions = append(failedTransactions, migrationTx)
 			return err
 		}
 
-		if err := m.setVersion(ctx, tx, migration.Id); err != nil {
+		if err := migration.Up(ctx, migrationTx); err != nil {
+			failedTransactions = append(failedTransactions, migrationTx)
 			return err
 		}
+
+		err = migrationTx.Commit()
+		if err != nil {
+			failedTransactions = append(failedTransactions, migrationTx)
+			return err
+		}
+
+		if migration.DisableFks {
+			_, err = m.db.Exec("PRAGMA foreign_keys = 1")
+			if err != nil {
+				return err
+			}
+		}
+
+		versionTx, err := m.db.Begin()
+		if err != nil {
+			failedTransactions = append(failedTransactions, versionTx)
+			return err
+		}
+
+		if err := m.setVersion(ctx, versionTx, migration.Id); err != nil {
+			failedTransactions = append(failedTransactions, versionTx)
+			return err
+		}
+
+		commitErr = versionTx.Commit()
+		if commitErr != nil {
+			failedTransactions = append(failedTransactions, versionTx)
+			return commitErr
+		}
 	}
-	commitErr = tx.Commit()
-	return commitErr
+	return nil
 }
 
 func (m *SQLLiteMigrator) Down(ctx context.Context, migrations migrations.Migrations) error {

@@ -59,6 +59,10 @@ func (s *sqlLoader) AddOperatorBundle(bundle *registry.Bundle) error {
 		tx.Rollback()
 	}()
 
+	if err := addPackageIfNotExists(tx, bundle.Package); err != nil {
+		return err
+	}
+
 	if err := s.addOperatorBundle(tx, bundle); err != nil {
 		return err
 	}
@@ -67,7 +71,8 @@ func (s *sqlLoader) AddOperatorBundle(bundle *registry.Bundle) error {
 }
 
 func (s *sqlLoader) addOperatorBundle(tx *sql.Tx, bundle *registry.Bundle) error {
-	addBundle, err := tx.Prepare("insert into operatorbundle(name, csv, bundle, bundlepath, version, skiprange, replaces, skips) values(?, ?, ?, ?, ?, ?, ?, ?)")
+	//testing
+	addBundle, err := tx.Prepare("insert into operatorbundle(name, csv, bundle, bundlepath, version, skiprange, replaces, skips, package_name) values(?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -105,7 +110,7 @@ func (s *sqlLoader) addOperatorBundle(tx *sql.Tx, bundle *registry.Bundle) error
 		return err
 	}
 
-	if _, err := addBundle.Exec(csvName, csvBytes, bundleBytes, bundleImage, version, skiprange, replaces, strings.Join(skips, ",")); err != nil {
+	if _, err := addBundle.Exec(csvName, csvBytes, bundleBytes, bundleImage, version, skiprange, replaces, strings.Join(skips, ","), bundle.Package); err != nil {
 		return err
 	}
 
@@ -266,12 +271,6 @@ func (s *sqlLoader) AddPackageChannels(manifest registry.PackageManifest) error 
 }
 
 func (s *sqlLoader) addPackageChannels(tx *sql.Tx, manifest registry.PackageManifest) error {
-	addPackage, err := tx.Prepare("insert into package(name) values(?)")
-	if err != nil {
-		return err
-	}
-	defer addPackage.Close()
-
 	addDefaultChannel, err := tx.Prepare("update package set default_channel = ? where name = ?")
 	if err != nil {
 		return err
@@ -307,23 +306,18 @@ func (s *sqlLoader) addPackageChannels(tx *sql.Tx, manifest registry.PackageMani
 
 	var errs []error
 
-	if _, err := addPackage.Exec(manifest.PackageName); err != nil {
-		errs = append(errs, err)
-		return utilerrors.NewAggregate(errs)
-	}
-
 	hasDefault := false
 	for _, c := range manifest.Channels {
-		if _, err := addChannel.Exec(c.Name, manifest.PackageName, c.CurrentCSVName); err != nil {
-			errs = append(errs, err)
-			continue
-		}
 		if c.IsDefaultChannel(manifest) {
 			hasDefault = true
 			if _, err := addDefaultChannel.Exec(c.Name, manifest.PackageName); err != nil {
 				errs = append(errs, err)
 				continue
 			}
+		}
+		if _, err := addChannel.Exec(c.Name, manifest.PackageName, c.CurrentCSVName); err != nil {
+			errs = append(errs, err)
+			continue
 		}
 	}
 	if !hasDefault {
@@ -558,9 +552,9 @@ func (s *sqlLoader) addAPIs(tx *sql.Tx, bundle *registry.Bundle) error {
 
 func (s *sqlLoader) getCSVNames(tx *sql.Tx, packageName string) ([]string, error) {
 	getID, err := tx.Prepare(`
-	  SELECT DISTINCT channel_entry.operatorbundle_name
-	  FROM channel_entry
-	  WHERE channel_entry.package_name=?`)
+	  SELECT name
+	  FROM operatorbundle
+	  WHERE package_name=?`)
 
 	if err != nil {
 		return nil, err
@@ -649,20 +643,15 @@ func (s *sqlLoader) AddBundlePackageChannels(manifest registry.PackageManifest, 
 		tx.Rollback()
 	}()
 
+	if err := addPackageIfNotExists(tx, bundle.Package); err != nil {
+		return err
+	}
+
 	if err := s.addOperatorBundle(tx, bundle); err != nil {
 		return err
 	}
 
-	// Delete package and channels (entries will cascade) - they will be recalculated
-	deletePkg, err := tx.Prepare("delete from package where name = ?")
-	if err != nil {
-		return err
-	}
-	defer deletePkg.Close()
-	_, err = deletePkg.Exec(manifest.PackageName)
-	if err != nil {
-		return err
-	}
+	// Delete channels (entries will cascade) - they will be recalculated
 	deleteChan, err := tx.Prepare("delete from channel where package_name = ?")
 	if err != nil {
 		return err
