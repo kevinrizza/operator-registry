@@ -146,11 +146,8 @@ type DependenciesFile struct {
 	Dependencies []Dependency `json:"dependencies" yaml:"dependencies"`
 }
 
-// Dependency specifies a single constraint that can be satisfied by a property on another bundle..
+// Dependency specifies a set of constraints that can be satisfied by properties on another bundle..
 type Dependency struct {
-	// The type of dependency. This field is required.
-	Type string `json:"type" yaml:"type"`
-
 	// The serialized value of the dependency
 	Value json.RawMessage `json:"value" yaml:"value"`
 }
@@ -244,33 +241,6 @@ func (d *DependenciesFile) GetDependencies() []*Dependency {
 		dependencies = append(dependencies, &dep)
 	}
 	return dependencies
-}
-
-// GetType returns the type of dependency
-func (e *Dependency) GetType() string {
-	return e.Type
-}
-
-// GetTypeValue returns the dependency object that is converted
-// from value string
-func (e *Dependency) GetTypeValue() interface{} {
-	switch e.GetType() {
-	case GVKType:
-		dep := GVKDependency{}
-		err := json.Unmarshal([]byte(e.GetValue()), &dep)
-		if err != nil {
-			return nil
-		}
-		return dep
-	case PackageType:
-		dep := PackageDependency{}
-		err := json.Unmarshal([]byte(e.GetValue()), &dep)
-		if err != nil {
-			return nil
-		}
-		return dep
-	}
-	return nil
 }
 
 // GetValue returns the value content of dependency

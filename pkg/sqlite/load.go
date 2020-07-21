@@ -695,7 +695,7 @@ func (s *sqlLoader) AddBundlePackageChannels(manifest registry.PackageManifest, 
 }
 
 func (s *sqlLoader) addDependencies(tx *sql.Tx, bundle *registry.Bundle) error {
-	addDep, err := tx.Prepare("insert into dependencies(type, value, operatorbundle_name, operatorbundle_version, operatorbundle_path) values(?, ?, ?, ?, ?)")
+	addDep, err := tx.Prepare("insert into dependencies(value, operatorbundle_name, operatorbundle_version, operatorbundle_path) values(?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -710,7 +710,7 @@ func (s *sqlLoader) addDependencies(tx *sql.Tx, bundle *registry.Bundle) error {
 		return sql.NullString{String: s, Valid: s != ""}
 	}
 	for _, dep := range bundle.Dependencies {
-		if _, err := addDep.Exec(dep.Type, dep.Value, bundle.Name, sqlString(bundleVersion), sqlString(bundle.BundleImage)); err != nil {
+		if _, err := addDep.Exec(dep.Value, bundle.Name, sqlString(bundleVersion), sqlString(bundle.BundleImage)); err != nil {
 			return err
 		}
 	}
@@ -722,16 +722,8 @@ func (s *sqlLoader) addDependencies(tx *sql.Tx, bundle *registry.Bundle) error {
 	}
 
 	for api := range requiredApis {
-		dep := registry.GVKDependency{
-			Group:   api.Group,
-			Kind:    api.Kind,
-			Version: api.Version,
-		}
-		value, err := json.Marshal(dep)
-		if err != nil {
-			return err
-		}
-		if _, err := addDep.Exec(registry.GVKType, value, bundle.Name, sqlString(bundleVersion), sqlString(bundle.BundleImage)); err != nil {
+		value := fmt.Sprintf("%s: %s/%s/%s", registry.GVKType, api.Group, api.Version, api.Kind)
+		if _, err := addDep.Exec(value, bundle.Name, sqlString(bundleVersion), sqlString(bundle.BundleImage)); err != nil {
 			return err
 		}
 	}
